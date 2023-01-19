@@ -230,6 +230,75 @@ namespace {
 /// graceful exit if the GUI dies unexpectedly. When called with some command-line arguments,
 /// like running 'bench', the function returns immediately after the command is executed.
 /// In addition to the UCI ones, some additional debug commands are also supported.
+void UCI::command(std::string cmd) {
+  static bool initialized = false;
+  static StateListPtr states;
+  static std::unique_ptr<Position> pos;
+  static std::shared_ptr<Thread> uiThread;
+
+  if (!initialized) {
+      states.reset(new std::deque<StateInfo>(1));
+      uiThread = std::make_shared<Thread>(0);
+      pos.reset(new Position());
+      pos->set(StartFEN, false, &states->back(), uiThread.get());
+      initialized = true;
+  }
+
+  string token;
+      istringstream is(cmd);
+
+      token.clear(); // Avoid a stale if getline() returns empty or blank line
+      is >> skipws >> token;
+
+      if (    token == "quit"
+          ||  token == "stop") {
+          Threads.stop = true;
+
+          if (token == "quit") {
+              pos.reset();
+              uiThread.reset();
+              initialized = false;
+              return;
+          }
+      }
+
+      // The GUI sends 'ponderhit' to tell us the user has played the expected move.
+      // So 'ponderhit' will be sent if we were told to ponder on the same move the
+      // user has played. We should continue searching but switch from pondering to
+      // normal search.
+      else if (token == "ponderhit")
+          Threads.main()->ponder = false; // Switch to normal search
+
+      else if (token == "uci")
+          sync_cout << "id name " << engine_info(true)
+                    << "\n"       << Options
+                    << "\nuciok"  << sync_endl;
+
+      else if (token == "setoption")  setoption(is);
+      else if (token == "go")         go(*pos, is, states);
+      else if (token == "position")   position(*pos, is, states);
+      else if (token == "ucinewgame") Search::clear();
+      else if (token == "isready")    sync_cout << "readyok" << sync_endl;
+
+      // Additional custom non-UCI commands, mainly for debugging.
+      // Do not use these commands during a search!
+      else if (token == "flip")     pos->flip();
+      else if (token == "bench")    bench(*pos, is, states);
+      else if (token == "d")        sync_cout << *pos << sync_endl;
+      else if (token == "eval")     trace_eval(*pos);
+      else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
+      else if (token == "export_net")
+      {
+          std::optional<std::string> filename;
+          std::string f;
+          if (is >> skipws >> f)
+              filename = f;
+          Eval::NNUE::save_eval(filename);
+      }
+      else if (!token.empty() && token[0] != '#')
+          sync_cout << "Unknown command: " << cmd << sync_endl;
+
+}
 
 void UCI::loop(int argc, char* argv[]) {
 
