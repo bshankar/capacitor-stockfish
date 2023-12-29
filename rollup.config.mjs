@@ -3,7 +3,7 @@ export default {
   output: [
     {
       file: 'dist/plugin.js',
-      format: 'iife',
+      format: 'cjs',
       name: 'capacitorStockfish',
       globals: {
         '@capacitor/core': 'capacitorExports',
